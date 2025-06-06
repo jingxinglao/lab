@@ -315,6 +315,51 @@
             gap: 10px;
             margin-top: 20px;
         }
+
+         /* 新增：二级按钮组样式 */
+        .sub-nav {
+            display: flex;
+            margin-top: 20px;
+            border-bottom: 2px solid #e9ecef;
+        }
+        .sub-nav button {
+            flex: 1;
+            padding: 10px 0;
+            background: transparent;
+            border: none;
+            font-size: 16px;
+            color: #666;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .sub-nav button.active {
+            color: #4facfe;
+            border-bottom: 3px solid #4facfe;
+            font-weight: 600;
+        }
+        .sub-tab-content {
+            display: none;
+            margin-top: 20px;
+        }
+        .sub-tab-content.active {
+            display: block;
+        }
+        /* 新增：表格样式（参考原有 records-table） */
+        .admin-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .admin-table th,
+        .admin-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .admin-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #333;
+        }
     </style>
 </head>
 <body>
@@ -415,7 +460,7 @@
                     <button class="nav-tab active" onclick="showTab('profile')">个人信息</button>
                     <button class="nav-tab" onclick="showTab('records')">消费记录</button>
                     <button class="nav-tab" onclick="showTab('recharge')">在线充值</button>
-                    <button class="nav-tab" id="admin-tab" onclick="showTab('admin')" style="display: none;">系统管理</button>
+                    <button class="nav-tab" onclick="showTab('admin')">系统管理</button>
                 </div>
 
                 <!-- 个人信息 -->
@@ -481,67 +526,24 @@
 
                 <!-- 系统管理 -->
                 <div id="admin-tab-content" class="tab-content hidden">
-                    <div class="info-grid">
-                        <div class="card">
-                            <h3>系统统计</h3>
-                            <div id="system-stats">
-                                <div class="info-item">
-                                    <span>总用户数</span>
-                                    <span id="total-users">--</span>
-                                </div>
-                                <div class="info-item">
-                                    <span>今日新增</span>
-                                    <span id="today-users">--</span>
-                                </div>
-                                <div class="info-item">
-                                    <span>总余额</span>
-                                    <span id="total-balance">--</span>
-                                </div>
-                                <div class="info-item">
-                                    <span>今日充值</span>
-                                    <span id="today-recharge">--</span>
-                                </div>
-                                <div class="info-item">
-                                    <span>今日消费</span>
-                                    <span id="today-consumption">--</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="card">
-                            <h3>用户管理</h3>
-                            <div class="search-box">
+                    <div class="card">
+                        <h3>用户管理</h3>
+                        <div class="search-box" style="display: flex; gap: 10px; margin-bottom: 20px;">
+                            <div style="flex: 1;">
                                 <input type="text" id="user-search" placeholder="搜索用户名/卡号/学号">
-                                <button onclick="searchUsers()" class="btn">搜索</button>
                             </div>
-                            <div id="users-table"></div>
-                        </div>
-
-                        <div class="card">
-                            <h3>操作日志</h3>
-                            <div id="operation-logs"></div>
-                        </div>
-
-                        <div class="card">
-                            <h3>系统监控</h3>
-                            <select id="monitor-severity">
-                                <option value="">所有级别</option>
-                                <option value="info">信息</option>
-                                <option value="warning">警告</option>
-                                <option value="error">错误</option>
-                            </select>
-                            <button onclick="loadMonitors()" class="btn">筛选</button>
-                            <div id="system-monitors"></div>
-                        </div>
-
-                        <div class="card">
-                            <h3>数据导出</h3>
-                            <div class="export-options">
-                                <button onclick="exportUserData()" class="btn">导出用户数据</button>
-                                <button onclick="exportTransactions()" class="btn">导出交易记录</button>
-                                <button onclick="exportLogs()" class="btn">导出操作日志</button>
+                            <div style="flex: 1;">
+                                <select id="department-search" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px;">
+                                    <option value="">所有学院</option>
+                                    <option value="计算机学院">计算机学院</option>
+                                    <option value="经济管理学院">经济管理学院</option>
+                                    <option value="机械工程学院">机械工程学院</option>
+                                    <option value="信息中心">信息中心</option>
+                                </select>
                             </div>
+                            <button onclick="searchUsers()" class="btn">搜索</button>
                         </div>
+                        <div id="users-table"></div>
                     </div>
                 </div>
             </div>
@@ -625,11 +627,6 @@
             // 更新用户信息
             document.getElementById('user-name').textContent = currentUser.name || currentUser.username;
             document.getElementById('user-card').textContent = currentUser.card_number || currentUser.id;
-            
-            // 如果是管理员，显示管理标签
-            if (currentUser.role === 'admin') {
-                document.getElementById('admin-tab').style.display = 'block';
-            }
             
             // 加载用户详细信息和充值记录
             loadUserProfile();
@@ -916,45 +913,158 @@
 
         // 加载管理员仪表盘
         async function loadAdminDashboard() {
-            loadSystemStats();
-            loadUsers();
-            loadLogs();
-            loadMonitors();
-        }
-
-        // 加载系统统计信息
-        async function loadSystemStats() {
             try {
-                const response = await fetch(`${API_BASE}/admin/statistics`, {
+                const response = await fetch(`${API_BASE}/admin/users`, {
                     headers: {
                         'Authorization': `Bearer ${authToken}`
                     }
                 });
                 
                 if (response.ok) {
-                    const stats = await response.json();
-                    document.getElementById('total-users').textContent = stats.total_users;
-                    document.getElementById('today-users').textContent = stats.today_new_users;
-                    document.getElementById('total-balance').textContent = stats.total_balance.toFixed(2);
-                    document.getElementById('today-recharge').textContent = stats.today_recharge.toFixed(2);
-                    document.getElementById('today-consumption').textContent = stats.today_consumption.toFixed(2);
+                    loadUsers();
+                } else if (response.status === 403) {
+                    // 如果不是管理员，显示无权限提示
+                    document.getElementById('users-table').innerHTML = 
+                        '<p style="text-align: center; color: #ff6b6b;">您没有权限访问此功能</p>';
                 }
             } catch (error) {
-                console.error('加载系统统计信息失败:', error);
+                console.error('加载管理员仪表盘失败:', error);
+                document.getElementById('users-table').innerHTML = 
+                    '<p style="text-align: center; color: #ff6b6b;">加载失败，请重试</p>';
             }
         }
 
-        // 定时刷新系统状态
-        setInterval(() => {
-            if (currentUser && currentUser.role === 'admin') {
-                loadSystemStats();
+        // 加载用户列表
+        async function loadUsers() {
+            try {
+                const response = await fetch(`${API_BASE}/admin/users`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const users = data.users || [];
+                    
+                    if (users.length === 0) {
+                        document.getElementById('users-table').innerHTML = 
+                            '<p style="text-align: center; color: #666;">暂无用户数据</p>';
+                        return;
+                    }
+                    
+                    const tableHtml = `
+                        <table class="records-table">
+                            <thead>
+                                <tr>
+                                    <th>用户名</th>
+                                    <th>姓名</th>
+                                    <th>学号</th>
+                                    <th>院系</th>
+                                    <th>卡号</th>
+                                    <th>余额</th>
+                                    <th>状态</th>
+                                    <th>注册时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${users.map(user => `
+                                    <tr>
+                                        <td>${user.username}</td>
+                                        <td>${user.name || '-'}</td>
+                                        <td>${user.student_id || '-'}</td>
+                                        <td>${user.department || '-'}</td>
+                                        <td>${user.card_number || '-'}</td>
+                                        <td>¥${user.balance || '0.00'}</td>
+                                        <td>${user.status === 'active' ? '正常' : '已冻结'}</td>
+                                        <td>${new Date(user.created_at).toLocaleString()}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                    document.getElementById('users-table').innerHTML = tableHtml;
+                }
+            } catch (error) {
+                console.error('加载用户列表失败:', error);
+                document.getElementById('users-table').innerHTML = 
+                    '<p style="text-align: center; color: #ff6b6b;">加载失败，请重试</p>';
             }
-        }, 30000); // 每30秒刷新一次
+        }
 
-        // 页面加载完成后的初始化
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('校园卡管理系统已加载');
-        });
+        // 搜索用户
+        async function searchUsers() {
+            const searchTerm = document.getElementById('user-search').value.trim();
+            const department = document.getElementById('department-search').value;
+            
+            try {
+                let url = `${API_BASE}/admin/users?`;
+                const params = new URLSearchParams();
+                
+                if (searchTerm) {
+                    params.append('search', searchTerm);
+                }
+                if (department) {
+                    params.append('department', department);
+                }
+                
+                const response = await fetch(url + params.toString(), {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const users = data.users || [];
+                    
+                    if (users.length === 0) {
+                        document.getElementById('users-table').innerHTML = 
+                            '<p style="text-align: center; color: #666;">未找到匹配的用户</p>';
+                        return;
+                    }
+                    
+                    const tableHtml = `
+                        <table class="records-table">
+                            <thead>
+                                <tr>
+                                    <th>用户名</th>
+                                    <th>姓名</th>
+                                    <th>学号</th>
+                                    <th>院系</th>
+                                    <th>卡号</th>
+                                    <th>余额</th>
+                                    <th>状态</th>
+                                    <th>注册时间</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${users.map(user => `
+                                    <tr>
+                                        <td>${user.username}</td>
+                                        <td>${user.name || '-'}</td>
+                                        <td>${user.student_id || '-'}</td>
+                                        <td>${user.department || '-'}</td>
+                                        <td>${user.card_number || '-'}</td>
+                                        <td>¥${user.balance || '0.00'}</td>
+                                        <td>${user.status === 'active' ? '正常' : '已冻结'}</td>
+                                        <td>${new Date(user.created_at).toLocaleString()}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                    document.getElementById('users-table').innerHTML = tableHtml;
+                } else if (response.status === 403) {
+                    document.getElementById('users-table').innerHTML = 
+                        '<p style="text-align: center; color: #ff6b6b;">您没有权限访问此功能</p>';
+                }
+            } catch (error) {
+                console.error('搜索用户失败:', error);
+                document.getElementById('users-table').innerHTML = 
+                    '<p style="text-align: center; color: #ff6b6b;">搜索失败，请重试</p>';
+            }
+        }
 
         // 修复问题：确保模态框只在点击按钮时显示
         function showEditProfileForm() {
@@ -981,12 +1091,6 @@
             if (e.target === this) {
                 hideEditProfileForm();
             }
-        });
-
-        // 页面加载完成后的初始化
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('校园卡管理系统已加载');
-            // 移除模态框相关代码
         });
 
         // 处理个人信息修改提交
