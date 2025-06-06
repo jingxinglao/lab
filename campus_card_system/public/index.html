@@ -528,20 +528,23 @@
                 <div id="admin-tab-content" class="tab-content hidden">
                     <div class="card">
                         <h3>用户管理</h3>
-                        <div class="search-box" style="display: flex; gap: 10px; margin-bottom: 20px;">
-                            <div style="flex: 1;">
-                                <input type="text" id="user-search" placeholder="搜索用户名/卡号/学号">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                            <button onclick="showCreateUserModal()" class="btn">创建新用户</button>
+                            <div class="search-box" style="display: flex; gap: 10px; width: 70%;">
+                                <div style="flex: 1;">
+                                    <input type="text" id="user-search" placeholder="搜索用户名/卡号/学号">
+                                </div>
+                                <div style="flex: 1;">
+                                    <select id="department-search" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px;">
+                                        <option value="">所有学院</option>
+                                        <option value="计算机学院">计算机学院</option>
+                                        <option value="经济管理学院">经济管理学院</option>
+                                        <option value="机械工程学院">机械工程学院</option>
+                                        <option value="信息中心">信息中心</option>
+                                    </select>
+                                </div>
+                                <button onclick="searchUsers()" class="btn">搜索</button>
                             </div>
-                            <div style="flex: 1;">
-                                <select id="department-search" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px;">
-                                    <option value="">所有学院</option>
-                                    <option value="计算机学院">计算机学院</option>
-                                    <option value="经济管理学院">经济管理学院</option>
-                                    <option value="机械工程学院">机械工程学院</option>
-                                    <option value="信息中心">信息中心</option>
-                                </select>
-                            </div>
-                            <button onclick="searchUsers()" class="btn">搜索</button>
                         </div>
                         <div id="users-table"></div>
                     </div>
@@ -578,12 +581,66 @@
                 </form>
             </div>
         </div>
+
+        <!-- 创建用户模态框 -->
+        <div id="create-user-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <h3>创建新用户</h3>
+                <div id="create-user-alert" class="alert hidden"></div>
+                <form id="create-user-form">
+                    <div class="form-group">
+                        <label for="new-username">用户名</label>
+                        <input type="text" id="new-username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new-password">密码</label>
+                        <input type="password" id="new-password" name="password" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new-name">姓名</label>
+                        <input type="text" id="new-name" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new-student-id">学号</label>
+                        <input type="text" id="new-student-id" name="student_id" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new-department">院系</label>
+                        <select id="new-department" name="department" required style="width: 100%; padding: 12px 15px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px;">
+                            <option value="">请选择院系</option>
+                            <option value="计算机学院">计算机学院</option>
+                            <option value="经济管理学院">经济管理学院</option>
+                            <option value="机械工程学院">机械工程学院</option>
+                            <option value="信息中心">信息中心</option>
+                        </select>
+                    </div>
+                    <div class="modal-buttons">
+                        <button type="submit" class="btn">创建</button>
+                        <button type="button" class="btn" style="background: #ccc;" onclick="hideCreateUserModal()">取消</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 确认删除用户模态框 -->
+        <div id="delete-user-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <h3>确认删除用户</h3>
+                <p>您确定要删除用户 <span id="delete-user-name"></span> 吗？此操作不可恢复。</p>
+                <div id="delete-user-alert" class="alert hidden"></div>
+                <div class="modal-buttons">
+                    <button onclick="confirmDeleteUser()" class="btn btn-danger">确认删除</button>
+                    <button onclick="hideDeleteUserModal()" class="btn" style="background: #ccc;">取消</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
         const API_BASE = 'http://127.0.0.1:3000/api';
         let currentUser = null;
         let authToken = null;
+        let userToDelete = null;
 
         // 登录功能
         document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -965,6 +1022,7 @@
                                     <th>余额</th>
                                     <th>状态</th>
                                     <th>注册时间</th>
+                                    <th>操作</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -978,6 +1036,9 @@
                                         <td>¥${user.balance || '0.00'}</td>
                                         <td>${user.status === 'active' ? '正常' : '已冻结'}</td>
                                         <td>${new Date(user.created_at).toLocaleString()}</td>
+                                        <td>
+                                            <button onclick="showDeleteUserModal(${JSON.stringify(user)})" class="btn btn-danger" style="padding: 5px 10px; font-size: 14px;">删除</button>
+                                        </td>
                                     </tr>
                                 `).join('')}
                             </tbody>
@@ -1121,6 +1182,94 @@
                 showAlert('edit-profile-alert', '网络错误', 'error');
             }
         });
+
+        // 显示创建用户模态框
+        function showCreateUserModal() {
+            const modal = document.getElementById('create-user-modal');
+            modal.style.display = 'flex';
+            document.getElementById('create-user-form').reset();
+        }
+
+        // 隐藏创建用户模态框
+        function hideCreateUserModal() {
+            const modal = document.getElementById('create-user-modal');
+            modal.style.display = 'none';
+        }
+
+        // 显示删除用户确认模态框
+        function showDeleteUserModal(user) {
+            userToDelete = user;
+            const modal = document.getElementById('delete-user-modal');
+            document.getElementById('delete-user-name').textContent = user.username;
+            modal.style.display = 'flex';
+        }
+
+        // 隐藏删除用户确认模态框
+        function hideDeleteUserModal() {
+            const modal = document.getElementById('delete-user-modal');
+            modal.style.display = 'none';
+            userToDelete = null;
+        }
+
+        // 处理创建用户表单提交
+        document.getElementById('create-user-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const userData = Object.fromEntries(formData.entries());
+            
+            try {
+                const response = await fetch(`${API_BASE}/admin/users`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(userData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('create-user-alert', '用户创建成功', 'success');
+                    setTimeout(() => {
+                        hideCreateUserModal();
+                        loadUsers(); // 重新加载用户列表
+                    }, 1500);
+                } else {
+                    showAlert('create-user-alert', result.error || '创建用户失败', 'error');
+                }
+            } catch (error) {
+                showAlert('create-user-alert', '网络错误', 'error');
+            }
+        });
+
+        // 确认删除用户
+        async function confirmDeleteUser() {
+            if (!userToDelete) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/admin/users/${userToDelete.id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('delete-user-alert', '用户删除成功', 'success');
+                    setTimeout(() => {
+                        hideDeleteUserModal();
+                        loadUsers(); // 重新加载用户列表
+                    }, 1500);
+                } else {
+                    showAlert('delete-user-alert', result.error || '删除用户失败', 'error');
+                }
+            } catch (error) {
+                showAlert('delete-user-alert', '网络错误', 'error');
+            }
+        }
     </script>
 </body>
 </html>

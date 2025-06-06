@@ -549,17 +549,26 @@ app.put('/api/change-password', authenticateToken, (req, res) => {
 
 // 获取所有用户列表
 app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
-    const { page = 1, limit = 20, search = '' } = req.query;
+    const { page = 1, limit = 20, search = '', department = '' } = req.query;
     const offset = (page - 1) * limit;
 
     let sql = `SELECT id, card_number, username, student_id, name, department, 
                       phone, email, balance, status, role, created_at, updated_at 
                FROM users`;
     let params = [];
+    let conditions = [];
 
     if (search) {
-        sql += ` WHERE name LIKE ? OR card_number LIKE ? OR student_id LIKE ?`;
-        params = [`%${search}%`, `%${search}%`, `%${search}%`];
+        conditions.push(`(name LIKE ? OR card_number LIKE ? OR student_id LIKE ? OR username LIKE ?)`);
+        params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    if (department) {
+        conditions.push(`department = ?`);
+        params.push(department);
+    }
+
+    if (conditions.length > 0) {
+        sql += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     sql += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
@@ -574,9 +583,9 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
         let countSql = 'SELECT COUNT(*) as total FROM users';
         let countParams = [];
 
-        if (search) {
-            countSql += ` WHERE name LIKE ? OR card_number LIKE ? OR student_id LIKE ?`;
-            countParams = [`%${search}%`, `%${search}%`, `%${search}%`];
+        if (conditions.length > 0) {
+            countSql += ` WHERE ${conditions.join(' AND ')}`;
+            countParams = params.slice(0, -2); // 移除 LIMIT 和 OFFSET 参数
         }
 
         db.get(countSql, countParams, (err, count) => {
@@ -586,6 +595,98 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
                 page: parseInt(page),
                 pages: Math.ceil(count.total / limit)
             });
+        });
+    });
+});
+
+// 创建新用户
+app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+    const { username, password, name, student_id, department } = req.body;
+
+    // 验证必填字段
+    if (!username || !password || !name || !student_id || !department) {
+        return res.status(400).json({ error: '所有字段都是必填的' });
+    }
+
+    // 检查用户名是否已存在
+    db.get('SELECT id FROM users WHERE username = ?', [username], async (err, existingUser) => {
+        if (err) {
+            return res.status(500).json({ error: '数据库错误' });
+        }
+
+        if (existingUser) {
+            return res.status(400).json({ error: '用户名已存在' });
+        }
+
+        // 生成卡号（使用学号作为卡号）
+        const card_number = student_id;
+
+        // 加密密码
+        const saltRounds = 10;
+        bcrypt.hash(password, saltRounds, (err, hashedPassword) => {
+            if (err) {
+                return res.status(500).json({ error: '密码加密失败' });
+            }
+
+            // 插入新用户
+            db.run(`INSERT INTO users 
+                    (card_number, username, password, student_id, name, department, role, balance, status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [card_number, username, hashedPassword, student_id, name, department, 'user', 0.00, 'active'],
+                function(err) {
+                    if (err) {
+                        return res.status(500).json({ error: '创建用户失败' });
+                    }
+
+                    // 记录操作日志
+                    logOperation(req.user.id, '创建用户', this.lastID, null, req.ip);
+
+                    res.status(201).json({
+                        message: '用户创建成功',
+                        user: {
+                            id: this.lastID,
+                            username,
+                            name,
+                            student_id,
+                            department,
+                            card_number
+                        }
+                    });
+                }
+            );
+        });
+    });
+});
+
+// 删除用户
+app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) => {
+    const userId = req.params.id;
+
+    // 检查用户是否存在
+    db.get('SELECT id, role FROM users WHERE id = ?', [userId], (err, user) => {
+        if (err) {
+            return res.status(500).json({ error: '数据库错误' });
+        }
+
+        if (!user) {
+            return res.status(404).json({ error: '用户不存在' });
+        }
+
+        // 不允许删除管理员账户
+        if (user.role === 'admin') {
+            return res.status(403).json({ error: '不能删除管理员账户' });
+        }
+
+        // 删除用户
+        db.run('DELETE FROM users WHERE id = ?', [userId], function(err) {
+            if (err) {
+                return res.status(500).json({ error: '删除用户失败' });
+            }
+
+            // 记录操作日志
+            logOperation(req.user.id, '删除用户', userId, null, req.ip);
+
+            res.json({ message: '用户删除成功' });
         });
     });
 });
