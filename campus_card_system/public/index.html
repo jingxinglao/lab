@@ -1037,7 +1037,7 @@
                                         <td>${user.status === 'active' ? '正常' : '已冻结'}</td>
                                         <td>${new Date(user.created_at).toLocaleString()}</td>
                                         <td>
-                                            <button onclick="showDeleteUserModal(${JSON.stringify(user)})" class="btn btn-danger" style="padding: 5px 10px; font-size: 14px;">删除</button>
+                                            <button onclick='showDeleteUserModal(${JSON.stringify(user).replace(/'/g, "\\'")})' class="btn btn-danger" style="padding: 5px 10px; font-size: 14px;">删除</button>
                                         </td>
                                     </tr>
                                 `).join('')}
