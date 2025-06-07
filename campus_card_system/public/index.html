@@ -855,10 +855,6 @@
             alertElement.className = `alert alert-${type}`;
             alertElement.textContent = message;
             alertElement.classList.remove('hidden');
-            
-            setTimeout(() => {
-                alertElement.classList.add('hidden');
-            }, 3000);
         }
 
         // 退出登录
@@ -1102,67 +1098,6 @@
                                     <th>余额</th>
                                     <th>状态</th>
                                     <th>注册时间</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${users.map(user => `
-                                    <tr>
-                                        <td>${user.username}</td>
-                                        <td>${user.name || '-'}</td>
-                                        <td>${user.student_id || '-'}</td>
-                                        <td>${user.department || '-'}</td>
-                                        <td>${user.card_number || '-'}</td>
-                                        <td>¥${user.balance || '0.00'}</td>
-                                        <td>${user.status === 'active' ? '正常' : '已冻结'}</td>
-                                        <td>${new Date(user.created_at).toLocaleString()}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    `;
-                    document.getElementById('users-table').innerHTML = tableHtml;
-                } else if (response.status === 403) {
-                    document.getElementById('users-table').innerHTML = 
-                        '<p style="text-align: center; color: #ff6b6b;">您没有权限访问此功能</p>';
-                }
-            } catch (error) {
-                console.error('搜索用户失败:', error);
-                document.getElementById('users-table').innerHTML = 
-                    '<p style="text-align: center; color: #ff6b6b;">搜索失败，请重试</p>';
-            }
-        }
-
-        // 修改 loadUsers 函数中的表格生成部分
-        async function loadUsers() {
-            try {
-                const response = await fetch(`${API_BASE}/admin/users`, {
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`
-                    }
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    const users = data.users || [];
-                    
-                    if (users.length === 0) {
-                        document.getElementById('users-table').innerHTML = 
-                            '<p style="text-align: center; color: #666;">暂无用户数据</p>';
-                        return;
-                    }
-                    
-                    const tableHtml = `
-                        <table class="records-table">
-                            <thead>
-                                <tr>
-                                    <th>用户名</th>
-                                    <th>姓名</th>
-                                    <th>学号</th>
-                                    <th>院系</th>
-                                    <th>卡号</th>
-                                    <th>余额</th>
-                                    <th>状态</th>
-                                    <th>注册时间</th>
                                     <th>操作</th>
                                 </tr>
                             </thead>
@@ -1191,11 +1126,14 @@
                         </table>
                     `;
                     document.getElementById('users-table').innerHTML = tableHtml;
+                } else if (response.status === 403) {
+                    document.getElementById('users-table').innerHTML = 
+                        '<p style="text-align: center; color: #ff6b6b;">您没有权限访问此功能</p>';
                 }
             } catch (error) {
-                console.error('加载用户列表失败:', error);
+                console.error('搜索用户失败:', error);
                 document.getElementById('users-table').innerHTML = 
-                    '<p style="text-align: center; color: #ff6b6b;">加载失败，请重试</p>';
+                    '<p style="text-align: center; color: #ff6b6b;">搜索失败，请重试</p>';
             }
         }
 
@@ -1205,6 +1143,10 @@
             const action = newStatus === 'active' ? '解冻' : '冻结';
             
             try {
+                // 先清空表格，显示加载状态
+                document.getElementById('users-table').innerHTML = 
+                    '<p style="text-align: center; color: #666;">正在处理...</p>';
+
                 const response = await fetch(`${API_BASE}/admin/users/${user.id}/status`, {
                     method: 'PUT',
                     headers: {
@@ -1217,15 +1159,23 @@
                 const result = await response.json();
                 
                 if (response.ok) {
-                    showAlert('users-table', `${action}用户成功`, 'success');
-                    setTimeout(() => {
-                        loadUsers(); // 重新加载用户列表
-                    }, 1500);
+                    // 显示成功消息
+                    document.getElementById('users-table').innerHTML = 
+                        '<p style="text-align: center; color: #28a745; background: #d4edda; padding: 10px; border-radius: 5px;">操作成功</p>';
+                    
+                    // 1秒后重新加载用户列表
+                    setTimeout(async () => {
+                        await loadUsers();
+                    }, 1000);
                 } else {
                     showAlert('users-table', result.error || `${action}用户失败`, 'error');
+                    // 如果操作失败，也重新加载列表以保持数据一致性
+                    await loadUsers();
                 }
             } catch (error) {
                 showAlert('users-table', '网络错误', 'error');
+                // 发生错误时也重新加载列表
+                await loadUsers();
             }
         }
 
