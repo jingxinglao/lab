@@ -182,13 +182,13 @@ Sybase PowerDesigner 是 Sybase（现 SAP 旗下）推出的企业级 CASE（计
 2. **技术特点**：  
 
      - **多模型集成与自动化**
-       集成数据模型**、**UML 模型**、**BPMN 模型和XML 模型，支持跨模型元素关联。例如，修改 CDM 中的实体后，PDM 和代码模板可自动同步更新。
+       集成数据模型、UML 模型、BPMN 模型和XML 模型，支持跨模型元素关联。例如，修改 CDM 中的实体后，PDM 和代码模板可自动同步更新。
 
      - **代码生成与逆向工程**
        支持生成 Java、C#、PowerBuilder 等语言的代码框架，并可通过逆向工程从数据库或代码反推模型。例如，从 Oracle 数据库生成 ER 图，或解析 Java 代码生成类图。
        
      - **跨平台与工具集成**
-       兼容Visual Studio**、**Eclipse等开发环境，提供插件支持。例如，在 Eclipse 中直接编辑 UML 模型并生成 Spring Boot 代码。
+       兼容Visual Studio、Eclipse等开发环境，提供插件支持。例如，在 Eclipse 中直接编辑 UML 模型并生成 Spring Boot 代码。
        
      - **数据驱动与动态绑定**
        支持与 Excel、SQL 数据库动态绑定，实现模型与数据的实时同步。例如，组织结构图可随 HR 系统数据自动更新。
