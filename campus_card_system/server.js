@@ -600,16 +600,15 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
 });
 
 // 创建新用户
-app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
     const { username, password, name, student_id, department } = req.body;
 
-    // 验证必填字段
     if (!username || !password || !name || !student_id || !department) {
         return res.status(400).json({ error: '所有字段都是必填的' });
     }
 
     // 检查用户名是否已存在
-    db.get('SELECT id FROM users WHERE username = ?', [username], async (err, existingUser) => {
+    db.get('SELECT id FROM users WHERE username = ?', [username], (err, existingUser) => {
         if (err) {
             return res.status(500).json({ error: '数据库错误' });
         }
@@ -618,30 +617,35 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
             return res.status(400).json({ error: '用户名已存在' });
         }
 
-        // 生成卡号（使用学号作为卡号）
-        const card_number = student_id;
+        // 生成卡号
+        const cardNumber = generateCardNumber();
 
         // 加密密码
-        const saltRounds = 10;
-        bcrypt.hash(password, saltRounds, (err, hashedPassword) => {
+        bcrypt.hash(password, 10, (err, hashedPassword) => {
             if (err) {
                 return res.status(500).json({ error: '密码加密失败' });
             }
 
-            // 插入新用户
-            db.run(`INSERT INTO users 
-                    (card_number, username, password, student_id, name, department, role, balance, status) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [card_number, username, hashedPassword, student_id, name, department, 'user', 0.00, 'active'],
+            // 创建用户
+            db.run(`INSERT INTO users (username, password, name, student_id, department, card_number, role, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'user', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [username, hashedPassword, name, student_id, department, cardNumber],
                 function(err) {
                     if (err) {
                         return res.status(500).json({ error: '创建用户失败' });
                     }
 
                     // 记录操作日志
-                    logOperation(req.user.id, '创建用户', this.lastID, null, req.ip);
+                    logOperation(
+                        req.user.id,
+                        '创建用户',
+                        this.lastID,
+                        `创建用户：${username}，姓名：${name}，学号：${student_id}，院系：${department}，卡号：${cardNumber}`,
+                        req.ip
+                    );
 
-                    res.status(201).json({
+                    res.json({
+                        success: true,
                         message: '用户创建成功',
                         user: {
                             id: this.lastID,
@@ -649,7 +653,7 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
                             name,
                             student_id,
                             department,
-                            card_number
+                            card_number: cardNumber
                         }
                     });
                 }
@@ -663,7 +667,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
     const userId = req.params.id;
 
     // 检查用户是否存在
-    db.get('SELECT id, role FROM users WHERE id = ?', [userId], (err, user) => {
+    db.get('SELECT id, username, name, student_id, department, card_number, role FROM users WHERE id = ?', [userId], (err, user) => {
         if (err) {
             return res.status(500).json({ error: '数据库错误' });
         }
@@ -684,7 +688,13 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
             }
 
             // 记录操作日志
-            logOperation(req.user.id, '删除用户', userId, null, req.ip);
+            logOperation(
+                req.user.id,
+                '删除用户',
+                userId,
+                `删除用户：${user.username}，姓名：${user.name}，学号：${user.student_id}，院系：${user.department}，卡号：${user.card_number}`,
+                req.ip
+            );
 
             res.json({ message: '用户删除成功' });
         });
@@ -800,10 +810,9 @@ app.get('/api/admin/logs', authenticateToken, requireAdmin, (req, res) => {
     const { page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
 
-    db.all(`SELECT l.*, u.name as user_name, tu.name as target_user_name
+    db.all(`SELECT l.*, u.card_number as operator_card
             FROM operation_logs l
             LEFT JOIN users u ON l.user_id = u.id
-            LEFT JOIN users tu ON l.target_user_id = tu.id
             ORDER BY l.created_at DESC
             LIMIT ? OFFSET ?`,
         [limit, offset], (err, logs) => {
@@ -823,6 +832,38 @@ app.get('/api/admin/logs', authenticateToken, requireAdmin, (req, res) => {
     );
 });
 
+// 创建操作日志
+app.post('/api/admin/logs', authenticateToken, requireAdmin, (req, res) => {
+    const { action_type, action_content, operator_card } = req.body;
+
+    if (!action_type || !action_content) {
+        return res.status(400).json({ error: '操作类型和内容不能为空' });
+    }
+
+    // 根据操作人卡号查找用户ID
+    db.get('SELECT id FROM users WHERE card_number = ?', [operator_card], (err, user) => {
+        if (err) {
+            return res.status(500).json({ error: '数据库错误' });
+        }
+
+        if (!user) {
+            return res.status(404).json({ error: '操作人不存在' });
+        }
+
+        // 插入日志记录
+        db.run(`INSERT INTO operation_logs (user_id, action, details, ip_address, created_at) 
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [user.id, action_type, action_content, req.ip],
+            function(err) {
+                if (err) {
+                    return res.status(500).json({ error: '记录日志失败' });
+                }
+                res.json({ success: true, message: '日志记录成功' });
+            }
+        );
+    });
+});
+
 // 冻结/解冻用户
 app.put('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, res) => {
     const userId = req.params.id;
@@ -832,22 +873,39 @@ app.put('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, re
         return res.status(400).json({ error: '状态值无效' });
     }
 
-    db.run('UPDATE users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [status, userId], function(err) {
-            if (err) {
-                return res.status(500).json({ error: '数据库错误' });
-            }
-
-            if (this.changes === 0) {
-                return res.status(404).json({ error: '用户不存在' });
-            }
-
-            logOperation(req.user.id, `${status === 'active' ? '解冻' : '冻结'}用户`, 
-                userId, null, req.ip);
-
-            res.json({ success: true, message: `用户${status === 'active' ? '解冻' : '冻结'}成功` });
+    // 获取用户信息
+    db.get('SELECT username, name, student_id, department, card_number FROM users WHERE id = ?', [userId], (err, user) => {
+        if (err) {
+            return res.status(500).json({ error: '数据库错误' });
         }
-    );
+
+        if (!user) {
+            return res.status(404).json({ error: '用户不存在' });
+        }
+
+        db.run('UPDATE users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            [status, userId], function(err) {
+                if (err) {
+                    return res.status(500).json({ error: '数据库错误' });
+                }
+
+                if (this.changes === 0) {
+                    return res.status(404).json({ error: '用户不存在' });
+                }
+
+                // 记录操作日志
+                logOperation(
+                    req.user.id,
+                    `${status === 'active' ? '解冻' : '冻结'}用户`,
+                    userId,
+                    `${status === 'active' ? '解冻' : '冻结'}用户：${user.username}，姓名：${user.name}，学号：${user.student_id}，院系：${user.department}，卡号：${user.card_number}`,
+                    req.ip
+                );
+
+                res.json({ success: true, message: `用户${status === 'active' ? '解冻' : '冻结'}成功` });
+            }
+        );
+    });
 });
 
 // 管理员快捷操作
