@@ -287,6 +287,92 @@ app.post('/api/login', (req, res) => {
     );
 });
 
+// 用户注册
+app.post('/api/register', async (req, res) => {
+    const { username, password, student_id, name, department } = req.body;
+
+    // 数据验证
+    if (!username || !password || !student_id || !name || !department) {
+        return res.status(400).json({ error: '所有字段都是必填的' });
+    }
+
+    if (username.length < 3) {
+        return res.status(400).json({ error: '用户名至少需要3个字符' });
+    }
+
+    if (password.length < 6) {
+        return res.status(400).json({ error: '密码至少需要6个字符' });
+    }
+
+    if (!/^\d{8,12}$/.test(student_id)) {
+        return res.status(400).json({ error: '学号须为8-12位数字' });
+    }
+
+    try {
+        // 检查重复用户
+        const existingUser = await new Promise((resolve, reject) => {
+            db.get('SELECT id FROM users WHERE username = ? OR student_id = ?', 
+                [username, student_id], 
+                (err, row) => {
+                    if (err) reject(err);
+                    else resolve(row);
+                });
+        });
+
+        if (existingUser) {
+            return res.status(400).json({ error: '用户名或学号已被注册' });
+        }
+
+        // 生成卡号（年份+5位序号）
+        const year = new Date().getFullYear();
+        const latestCard = await new Promise((resolve, reject) => {
+            db.get('SELECT card_number FROM users WHERE card_number LIKE ? ORDER BY card_number DESC LIMIT 1',
+                [`${year}%`],
+                (err, row) => {
+                    if (err) reject(err);
+                    else resolve(row);
+                });
+        });
+
+        let sequenceNum = '00001';
+        if (latestCard) {
+            const lastSeq = parseInt(latestCard.card_number.slice(-5));
+            sequenceNum = String(lastSeq + 1).padStart(5, '0');
+        }
+        const cardNumber = `${year}${sequenceNum}`;
+
+        // 密码加密
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // 创建新用户
+        await new Promise((resolve, reject) => {
+            db.run(`INSERT INTO users (
+                card_number, username, password, student_id, 
+                name, department, role, balance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [cardNumber, username, hashedPassword, student_id, name, department, 'user', 0.00],
+            function(err) {
+                if (err) reject(err);
+                else resolve(this);
+            });
+        });
+
+        // 记录操作日志
+        logOperation(null, '用户注册', null, 
+            `新用户: ${username}, 学号: ${student_id}`, req.ip);
+
+        res.status(201).json({ 
+            success: true, 
+            message: '注册成功',
+            card_number: cardNumber
+        });
+
+    } catch (error) {
+        console.error('注册错误:', error);
+        res.status(500).json({ error: '注册失败，请稍后重试' });
+    }
+});
+
 // 获取用户个人信息
 app.get('/api/profile', authenticateToken, (req, res) => {
     const userId = req.user.id;
