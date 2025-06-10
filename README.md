@@ -7,9 +7,8 @@ campus_card_system/
 ├─public/          # 前端静态文件
 │  └─index.html    # 主页面
 ├─server.js        # 后端服务器代码
-├─package.json     # 项目依赖配置
-├─README.md        # 项目说明文档
-└─campus_card.db   # SQLite数据库文件
+├─package-lock.json   # 项目依赖配置
+└─campus_card.db      # SQLite数据库文件
 ```
 
 ## 后端本地部署运行
