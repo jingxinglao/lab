@@ -360,6 +360,34 @@
             font-weight: 600;
             color: #333;
         }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 20px;
+        }
+
+        .pagination button {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin: 0 5px;
+            transition: background 0.3s ease;
+        }
+
+        .pagination button:hover {
+            background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+        }
+
+        .pagination span {
+            font-size: 16px;
+            color: #333;
+            margin: 0 10px;
+        }
     </style>
 </head>
 <body>
@@ -535,14 +563,8 @@
                                 <input type="text" id="user-search" placeholder="搜索用户名/卡号/学号">
                             </div>
                                 <div style="flex: 1;">
-                                    <select id="department-search" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px;">
-                                        <option value="">所有学院</option>
-                                        <option value="计算机学院">计算机学院</option>
-                                        <option value="经济管理学院">经济管理学院</option>
-                                        <option value="机械工程学院">机械工程学院</option>
-                                        <option value="信息中心">信息中心</option>
-                            </select>
-                        </div>
+                                    <input type="text" id="department-search" placeholder="搜索学院" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px;">
+                                </div>
                                 <button onclick="searchUsers()" class="btn">搜索</button>
                             </div>
                         </div>
@@ -551,10 +573,27 @@
                         <!-- 新增：操作日志部分 -->
                         <div style="margin-top: 40px;">
                             <h3>操作日志</h3>
-                            <div class="search-box" style="margin-bottom: 20px;">
-                                <input type="text" id="log-search" placeholder="搜索操作内容">
-                                <button onclick="searchLogs()" class="btn">搜索日志</button>
-                        </div>
+                            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                                <div class="search-box" style="flex: 2;">
+                                    <input type="text" id="log-search" list="action-types" placeholder="搜索操作内容">
+                                    <datalist id="action-types">
+                                        <option value="用户登录">
+                                        <option value="创建用户">
+                                        <option value="删除用户">
+                                        <option value="修改个人信息">
+                                        <option value="修改密码">
+                                        <option value="在线充值">
+                                        <option value="冻结用户">
+                                        <option value="解冻用户">
+                                    </datalist>
+                                    <button onclick="searchLogs()" class="btn">搜索日志</button>
+                                </div>
+                                <div style="flex: 1;">
+                                    <select id="operator-filter" style="width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px;">
+                                        <option value="">所有操作人</option>
+                                    </select>
+                                </div>
+                            </div>
                             <div id="logs-table"></div>
                         </div>
                             </div>
@@ -616,13 +655,7 @@
                     </div>
                     <div class="form-group">
                         <label for="new-department">院系</label>
-                        <select id="new-department" name="department" required style="width: 100%; padding: 12px 15px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px;">
-                            <option value="">请选择院系</option>
-                            <option value="计算机学院">计算机学院</option>
-                            <option value="经济管理学院">经济管理学院</option>
-                            <option value="机械工程学院">机械工程学院</option>
-                            <option value="信息中心">信息中心</option>
-                        </select>
+                        <input type="text" id="new-department" name="department" required style="width: 100%; padding: 12px 15px; border: 2px solid #e9ecef; border-radius: 10px; font-size: 16px;">
                     </div>
                     <div class="modal-buttons">
                         <button type="submit" class="btn">创建</button>
@@ -648,13 +681,24 @@
 
     <script>
         const API_BASE = 'http://127.0.0.1:3000/api';
-        let currentUser = null;
-        let authToken = null;
+        let currentUser = JSON.parse(localStorage.getItem('currentUser')) || null;
+        let authToken = localStorage.getItem('authToken') || null;
         let userToDelete = null;
+
+        // 页面加载完成后检查登录状态
+        document.addEventListener('DOMContentLoaded', () => {
+            if (currentUser && authToken) {
+                showMainSection();
+            }
+        });
 
         // 登录功能
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();
+            
+            // 先重置所有显示状态
+            document.querySelector('.balance-card').style.display = 'block';
+            document.querySelector('#recharge-history').parentElement.style.display = 'block';
             
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
@@ -673,6 +717,9 @@
                 if (response.ok) {
                     authToken = result.token;
                     currentUser = result.user;
+                    // 保存登录状态到 localStorage
+                    localStorage.setItem('authToken', authToken);
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
                     showAlert('login-alert', '登录成功！', 'success');
                     
                     setTimeout(() => {
@@ -695,7 +742,50 @@
             document.getElementById('user-name').textContent = currentUser.name || currentUser.username;
             document.getElementById('user-card').textContent = currentUser.card_number || currentUser.id;
             
-            // 加载用户详细信息和充值记录
+            // 先显示所有元素，后面再根据角色隐藏
+            document.querySelector('.balance-card').style.display = 'block';
+            document.querySelector('#recharge-history').parentElement.style.display = 'block';
+            
+            // 先隐藏所有标签页内容
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabContents.forEach(content => content.classList.add('hidden'));
+            
+            // 重置所有导航标签状态
+            const navTabs = document.querySelectorAll('.nav-tab');
+            navTabs.forEach(tab => {
+                tab.classList.remove('active');
+                tab.style.display = 'block';  // 先显示所有标签
+            });
+            
+            // 根据用户角色控制显示内容
+            const isAdmin = currentUser.role === 'admin';
+            
+            if (isAdmin) {
+                // 管理员隐藏余额和充值记录
+                document.querySelector('.balance-card').style.display = 'none';
+                document.querySelector('#recharge-history').parentElement.style.display = 'none';
+                // 管理员隐藏消费记录和在线充值标签
+                navTabs.forEach(tab => {
+                    if (tab.textContent === '消费记录' || tab.textContent === '在线充值') {
+                        tab.style.display = 'none';
+                    }
+                });
+                // 管理员默认显示个人信息标签页 [修改此处]
+                document.querySelector('[onclick="showTab(\'profile\')"]').classList.add('active');
+                document.getElementById('profile-tab').classList.remove('hidden');
+            } else {
+                // 普通用户隐藏系统管理标签
+                navTabs.forEach(tab => {
+                    if (tab.textContent === '系统管理') {
+                        tab.style.display = 'none';
+                    }
+                });
+                // 普通用户默认显示个人信息标签页
+                document.querySelector('[onclick="showTab(\'profile\')"]').classList.add('active');
+                document.getElementById('profile-tab').classList.remove('hidden');
+            }
+            
+            // 加载用户详细信息
             loadUserProfile();
         }
 
@@ -835,6 +925,13 @@
 
         // 标签页切换
         function showTab(tabName) {
+            // 检查是否是管理员
+            if (currentUser.role === 'admin') {
+                if (tabName === 'records' || tabName === 'recharge') {
+                    return; // 管理员不允许访问这些标签页
+                }
+            }
+
             // 更新导航标签
             document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
             event.target.classList.add('active');
@@ -865,29 +962,66 @@
             alertElement.className = `alert alert-${type}`;
             alertElement.textContent = message;
             alertElement.classList.remove('hidden');
+            
+            // 3秒后自动隐藏提示信息
+            setTimeout(() => {
+                alertElement.classList.add('hidden');
+                alertElement.textContent = '';
+            }, 3000);
+        }
+
+        // 清除所有提示信息
+        function clearAllAlerts() {
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                alert.classList.add('hidden');
+                alert.textContent = '';
+            });
         }
 
         // 退出登录
         function logout() {
             currentUser = null;
             authToken = null;
+            // 清除本地存储的登录状态
+            localStorage.removeItem('currentUser');
+            localStorage.removeItem('authToken');
+            
+            // 重置显示状态
+            document.querySelector('.balance-card').style.display = 'block';
+            document.querySelector('#recharge-history').parentElement.style.display = 'block';
+            const navTabs = document.querySelectorAll('.nav-tab');
+            navTabs.forEach(tab => {
+                tab.style.display = 'block';
+            });
+            
+            // 重置所有显示状态
             document.getElementById('main-section').classList.remove('active');
             document.getElementById('login-section').classList.add('active');
             
+            // 清理表格内容
+            document.getElementById('users-table').innerHTML = '';
+            document.getElementById('logs-table').innerHTML = '';
+            
             // 重置表单
             document.getElementById('login-form').reset();
+            
+            // 清除所有提示信息
+            clearAllAlerts();
         }
 
         // 显示注册表单
         function showRegisterForm() {
             document.getElementById('login-section').classList.remove('active');
             document.getElementById('register-section').classList.add('active');
+            clearAllAlerts(); // 切换表单时清除提示信息
         }
 
         // 返回登录表单
         function showLoginForm() {
             document.getElementById('register-section').classList.remove('active');
             document.getElementById('login-section').classList.add('active');
+            clearAllAlerts(); // 切换表单时清除提示信息
         }
 
         // 处理注册表单提交
@@ -974,7 +1108,7 @@
             }
         }
 
-        // 加载管理员仪表盘
+        // 修改加载管理员仪表盘函数
         async function loadAdminDashboard() {
             try {
                 const response = await fetch(`${API_BASE}/admin/users`, {
@@ -984,8 +1118,12 @@
                 });
                 
                 if (response.ok) {
-                    await loadUsers();
-                    await loadLogs(); // 加载操作日志
+                    // 首次加载时调用 loadUsers 和 loadLogs
+                    await Promise.all([
+                        loadUsers(1),  // 加载第一页用户数据
+                        loadLogs(1),    // 加载第一页日志数据
+                        loadOperators() // 加载操作人列表
+                    ]);
                 } else if (response.status === 403) {
                     document.getElementById('users-table').innerHTML = 
                         '<p style="text-align: center; color: #ff6b6b;">您没有权限访问此功能</p>';
@@ -997,10 +1135,15 @@
             }
         }
 
+        let currentPage = 1; // 用户列表当前页
+        let currentLogPage = 1; // 日志列表当前页
+        let totalPages = 1; // 用户列表总页数
+        let totalLogPages = 1; // 日志列表总页数
+
         // 加载用户列表
-        async function loadUsers() {
+        async function loadUsers(page = 1) {
             try {
-                const response = await fetch(`${API_BASE}/admin/users`, {
+                const response = await fetch(`${API_BASE}/admin/users?page=${page}&limit=10`, {
                     headers: {
                         'Authorization': `Bearer ${authToken}`
                     }
@@ -1008,6 +1151,8 @@
                 
                 if (response.ok) {
                     const data = await response.json();
+                    currentPage = page;
+                    totalPages = data.pages;
                     const users = data.users || [];
                     
                     if (users.length === 0) {
@@ -1054,6 +1199,13 @@
                                 `).join('')}
                             </tbody>
                         </table>
+                        <div class="pagination">
+                            <button onclick="loadUsers(${page - 1})" 
+                                    ${page <= 1 ? 'disabled' : ''}>上一页</button>
+                            <span>第 ${page} 页 / 共 ${data.pages} 页</span>
+                            <button onclick="loadUsers(${page + 1})"
+                                    ${page >= data.pages ? 'disabled' : ''}>下一页</button>
+                        </div>
                     `;
                     document.getElementById('users-table').innerHTML = tableHtml;
                 }
@@ -1064,23 +1216,10 @@
             }
         }
 
-        // 搜索用户
-        async function searchUsers() {
-            const searchTerm = document.getElementById('user-search').value.trim();
-            const department = document.getElementById('department-search').value;
-            
+        // 加载操作日志
+        async function loadLogs(page = 1) {
             try {
-                let url = `${API_BASE}/admin/users?`;
-                const params = new URLSearchParams();
-                
-                if (searchTerm) {
-                    params.append('search', searchTerm);
-                }
-                if (department) {
-                    params.append('department', department);
-                }
-                
-                const response = await fetch(url + params.toString(), {
+                const response = await fetch(`${API_BASE}/admin/logs?page=${page}&limit=10`, {
                     headers: {
                         'Authorization': `Bearer ${authToken}`
                     }
@@ -1088,6 +1227,80 @@
                 
                 if (response.ok) {
                     const data = await response.json();
+                    currentLogPage = page;
+                    totalLogPages = data.pages;
+                    const logs = data.logs || [];
+                    
+                    if (logs.length === 0) {
+                        document.getElementById('logs-table').innerHTML = 
+                            '<p style="text-align: center; color: #666;">暂无操作日志</p>';
+                        return;
+                    }
+                    
+                    const tableHtml = `
+                        <table class="records-table">
+                            <thead>
+                                <tr>
+                                    <th>操作时间</th>
+                                    <th>操作类型</th>
+                                    <th>操作内容</th>
+                                    <th>操作人</th>
+                                    <th>IP地址</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${logs.map(log => `
+                                    <tr>
+                                        <td>${new Date(log.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</td>
+                                        <td>${log.action_type}</td>
+                                        <td>${log.action_content}</td>
+                                        <td>${log.operator_card || '-'}</td>
+                                        <td>${log.ip_address}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                        <div class="pagination">
+                            <button onclick="loadLogs(${page - 1})"
+                                    ${page <= 1 ? 'disabled' : ''}>上一页</button>
+                            <span>第 ${page} 页 / 共 ${data.pages} 页</span>
+                            <button onclick="loadLogs(${page + 1})"
+                                    ${page >= data.pages ? 'disabled' : ''}>下一页</button>
+                        </div>
+                    `;
+                    document.getElementById('logs-table').innerHTML = tableHtml;
+                }
+            } catch (error) {
+                console.error('加载操作日志失败:', error);
+                document.getElementById('logs-table').innerHTML = 
+                    '<p style="text-align: center; color: #ff6b6b;">加载失败，请重试</p>';
+            }
+        }
+
+        // 搜索用户
+        async function searchUsers(page = 1) {
+            const searchTerm = document.getElementById('user-search').value.trim();
+            const department = document.getElementById('department-search').value;
+            
+            try {
+                let url = `${API_BASE}/admin/users?page=${page}&limit=10`;
+                if (searchTerm) {
+                    url += `&search=${encodeURIComponent(searchTerm)}`;
+                }
+                if (department) {
+                    url += `&department=${encodeURIComponent(department)}`;
+                }
+                
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    currentPage = page;
+                    totalPages = data.pages;
                     const users = data.users || [];
                     
                     if (users.length === 0) {
@@ -1134,6 +1347,13 @@
                                 `).join('')}
                             </tbody>
                         </table>
+                        <div class="pagination">
+                            <button onclick="searchUsers(${page - 1})" 
+                                    ${page <= 1 ? 'disabled' : ''}>上一页</button>
+                            <span>第 ${page} 页 / 共 ${data.pages} 页</span>
+                            <button onclick="searchUsers(${page + 1})"
+                                    ${page >= data.pages ? 'disabled' : ''}>下一页</button>
+                        </div>
                     `;
                     document.getElementById('users-table').innerHTML = tableHtml;
                 } else if (response.status === 403) {
@@ -1147,105 +1367,77 @@
             }
         }
 
-        // 添加切换用户状态的函数
-        async function toggleUserStatus(user) {
-            const newStatus = user.status === 'active' ? 'frozen' : 'active';
-            const action = newStatus === 'active' ? '解冻' : '冻结';
+        // 搜索操作日志
+        async function searchLogs(page = 1) {
+            const searchTerm = document.getElementById('log-search').value.trim();
+            const operatorCard = document.getElementById('operator-filter').value;
             
             try {
-                document.getElementById('users-table').innerHTML = 
-                    '<p style="text-align: center; color: #666;">正在处理...</p>';
-
-                const response = await fetch(`${API_BASE}/admin/users/${user.id}/status`, {
-                    method: 'PUT',
+                let url = `${API_BASE}/admin/logs?page=${page}&limit=10`;
+                if (searchTerm) {
+                    url += `&search=${encodeURIComponent(searchTerm)}`;
+                }
+                if (operatorCard) {
+                    url += `&operator=${encodeURIComponent(operatorCard)}`;
+                }
+                
+                const response = await fetch(url, {
                     headers: {
-                        'Content-Type': 'application/json',
                         'Authorization': `Bearer ${authToken}`
-                    },
-                    body: JSON.stringify({ status: newStatus })
+                    }
                 });
                 
-                const result = await response.json();
-                
                 if (response.ok) {
-                    document.getElementById('users-table').innerHTML = 
-                        '<p style="text-align: center; color: #28a745; background: #d4edda; padding: 10px; border-radius: 5px;">操作成功</p>';
+                    const data = await response.json();
+                    currentLogPage = page;
+                    totalLogPages = data.pages;
+                    const logs = data.logs || [];
                     
-                    // 记录状态变更日志
-                    await recordLog(
-                        newStatus === 'active' ? '解冻用户' : '冻结用户',
-                        `${newStatus === 'active' ? '解冻' : '冻结'}用户：${user.username}`
-                    );
+                    if (logs.length === 0) {
+                        document.getElementById('logs-table').innerHTML = 
+                            '<p style="text-align: center; color: #666;">未找到匹配的操作日志</p>';
+                        return;
+                    }
                     
-                    setTimeout(async () => {
-                        await loadUsers();
-                        await loadLogs(); // 重新加载日志
-                    }, 1000);
-                } else {
-                    showAlert('users-table', result.error || `${action}用户失败`, 'error');
-                    await loadUsers();
+                    const tableHtml = `
+                        <table class="records-table">
+                            <thead>
+                                <tr>
+                                    <th>操作时间</th>
+                                    <th>操作类型</th>
+                                    <th>操作内容</th>
+                                    <th>操作人</th>
+                                    <th>IP地址</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${logs.map(log => `
+                                    <tr>
+                                        <td>${new Date(log.created_at).toLocaleString()}</td>
+                                        <td>${log.action_type}</td>
+                                        <td>${log.action_content}</td>
+                                        <td>${log.operator}</td>
+                                        <td>${log.ip_address}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                        <div class="pagination">
+                            <button onclick="searchLogs(${page - 1})"
+                                    ${page <= 1 ? 'disabled' : ''}>上一页</button>
+                            <span>第 ${page} 页 / 共 ${data.pages} 页</span>
+                            <button onclick="searchLogs(${page + 1})"
+                                    ${page >= data.pages ? 'disabled' : ''}>下一页</button>
+                        </div>
+                    `;
+                    document.getElementById('logs-table').innerHTML = tableHtml;
                 }
             } catch (error) {
-                showAlert('users-table', '网络错误', 'error');
-                await loadUsers();
+                console.error('搜索操作日志失败:', error);
+                document.getElementById('logs-table').innerHTML = 
+                    '<p style="text-align: center; color: #ff6b6b;">搜索失败，请重试</p>';
             }
         }
-
-        // 修复问题：确保模态框只在点击按钮时显示
-        function showEditProfileForm() {
-            const modal = document.getElementById('edit-profile-modal');
-            modal.style.display = 'flex'; // 使用flex来正确显示模态框
-            
-            // 填充当前用户信息
-            if (currentUser) {
-                const form = document.getElementById('edit-profile-form');
-                form.elements['name'].value = currentUser.name || '';
-                form.elements['department'].value = currentUser.department || '';
-                form.elements['phone'].value = currentUser.phone || '';
-                form.elements['email'].value = currentUser.email || '';
-            }
-        }
-
-        function hideEditProfileForm() {
-            const modal = document.getElementById('edit-profile-modal');
-            modal.style.display = 'none';
-        }
-
-        // 点击模态框背景关闭模态框
-        document.getElementById('edit-profile-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                hideEditProfileForm();
-            }
-        });
-
-        // 处理个人信息修改提交
-        document.getElementById('edit-profile-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const updateData = Object.fromEntries(formData.entries());
-            try {
-                const response = await fetch(`${API_BASE}/profile`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`
-                    },
-                    body: JSON.stringify(updateData)
-                });
-                const result = await response.json();
-                if (response.ok) {
-                    showAlert('edit-profile-alert', '信息更新成功', 'success');
-                    setTimeout(() => {
-                        hideEditProfileForm();
-                        loadUserProfile();
-                    }, 1500);
-                } else {
-                    showAlert('edit-profile-alert', result.error || '更新失败', 'error');
-                }
-            } catch (error) {
-                showAlert('edit-profile-alert', '网络错误', 'error');
-            }
-        });
 
         // 显示创建用户模态框
         function showCreateUserModal() {
@@ -1341,58 +1533,6 @@
             }
         }
 
-        // 加载操作日志
-        async function loadLogs() {
-            try {
-                const response = await fetch(`${API_BASE}/admin/logs`, {
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`
-                    }
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    const logs = data.logs || [];
-                    
-                    if (logs.length === 0) {
-                        document.getElementById('logs-table').innerHTML = 
-                            '<p style="text-align: center; color: #666;">暂无操作日志</p>';
-                        return;
-                    }
-                    
-                    const tableHtml = `
-                        <table class="records-table">
-                            <thead>
-                                <tr>
-                                    <th>操作时间</th>
-                                    <th>操作类型</th>
-                                    <th>操作内容</th>
-                                    <th>操作人</th>
-                                    <th>IP地址</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${logs.map(log => `
-                                    <tr>
-                                        <td>${new Date(log.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</td>
-                                        <td>${log.action_type}</td>
-                                        <td>${log.action_content}</td>
-                                        <td>${log.operator_card || '-'}</td>
-                                        <td>${log.ip_address}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    `;
-                    document.getElementById('logs-table').innerHTML = tableHtml;
-                }
-            } catch (error) {
-                console.error('加载操作日志失败:', error);
-                document.getElementById('logs-table').innerHTML = 
-                    '<p style="text-align: center; color: #ff6b6b;">加载失败，请重试</p>';
-            }
-        }
-
         // 记录操作日志
         async function recordLog(actionType, actionContent) {
             try {
@@ -1413,64 +1553,88 @@
             }
         }
 
-        // 搜索操作日志
-        async function searchLogs() {
-            const searchTerm = document.getElementById('log-search').value.trim();
-            
+        // 加载操作人列表
+        async function loadOperators() {
             try {
-                let url = `${API_BASE}/admin/logs`;
-                if (searchTerm) {
-                    url += `?search=${encodeURIComponent(searchTerm)}`;
-                }
-                
-                const response = await fetch(url, {
+                const response = await fetch(`${API_BASE}/admin/operators`, {
                     headers: {
                         'Authorization': `Bearer ${authToken}`
                     }
                 });
                 
                 if (response.ok) {
-                    const data = await response.json();
-                    const logs = data.logs || [];
+                    const operators = await response.json();
+                    const selectElement = document.getElementById('operator-filter');
                     
-                    if (logs.length === 0) {
-                        document.getElementById('logs-table').innerHTML = 
-                            '<p style="text-align: center; color: #666;">未找到匹配的操作日志</p>';
-                        return;
+                    // 清除现有选项，只保留默认选项
+                    while (selectElement.options.length > 1) {
+                        selectElement.remove(1);
                     }
                     
-                    const tableHtml = `
-                        <table class="records-table">
-                            <thead>
-                                <tr>
-                                    <th>操作时间</th>
-                                    <th>操作类型</th>
-                                    <th>操作内容</th>
-                                    <th>操作人</th>
-                                    <th>IP地址</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${logs.map(log => `
-                                    <tr>
-                                        <td>${new Date(log.created_at).toLocaleString()}</td>
-                                        <td>${log.action_type}</td>
-                                        <td>${log.action_content}</td>
-                                        <td>${log.operator}</td>
-                                        <td>${log.ip_address}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    `;
-                    document.getElementById('logs-table').innerHTML = tableHtml;
+                    // 使用 Set 去重
+                    const uniqueOperators = Array.from(new Set(operators.map(op => 
+                        JSON.stringify({card_number: op.card_number, name: op.name})
+                    ))).map(str => JSON.parse(str));
+                    
+                    // 添加新选项
+                    uniqueOperators.forEach(op => {
+                        const option = document.createElement('option');
+                        option.value = op.card_number;
+                        option.textContent = `${op.name} (${op.card_number})`;
+                        selectElement.appendChild(option);
+                    });
                 }
             } catch (error) {
-                console.error('搜索操作日志失败:', error);
-                document.getElementById('logs-table').innerHTML = 
-                    '<p style="text-align: center; color: #ff6b6b;">搜索失败，请重试</p>';
+                console.error('加载操作人列表失败:', error);
             }
         }
+
+        // 显示修改个人信息模态框
+        function showEditProfileForm() {
+            const modal = document.getElementById('edit-profile-modal');
+            // 填充当前用户信息
+            document.getElementById('edit-name').value = currentUser.name || '';
+            document.getElementById('edit-department').value = currentUser.department || '';
+            document.getElementById('edit-phone').value = currentUser.phone || '';
+            document.getElementById('edit-email').value = currentUser.email || '';
+            modal.style.display = 'flex';
+        }
+
+        // 隐藏修改个人信息模态框
+        function hideEditProfileForm() {
+            const modal = document.getElementById('edit-profile-modal');
+            modal.style.display = 'none';
+        }
+
+        // 处理修改个人信息表单提交
+        document.getElementById('edit-profile-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const profileData = Object.fromEntries(formData.entries());
+
+            try {
+                const response = await fetch(`${API_BASE}/profile`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(profileData)
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showAlert('edit-profile-alert', '个人信息更新成功', 'success');
+                    await loadUserProfile(); // 重新加载用户信息
+                    setTimeout(hideEditProfileForm, 1500);
+                } else {
+                    showAlert('edit-profile-alert', result.error || '更新失败', 'error');
+                }
+            } catch (error) {
+                showAlert('edit-profile-alert', '网络错误', 'error');
+            }
+        });
     </script>
 </body>
 </html>

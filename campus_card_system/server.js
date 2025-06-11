@@ -8,6 +8,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = 3000;
@@ -18,11 +19,31 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-const dbPath = path.resolve('./campus_card.db');
+// 生成卡号函数
+function generateCardNumber() {
+    const year = new Date().getFullYear();
+    const randomNum = Math.floor(Math.random() * 100000).toString().padStart(5, '0');
+    return `${year}${randomNum}`;
+}
+
+// 数据库路径处理
+const dbPath = path.resolve(__dirname, 'campus_card.db');
 console.log('服务器数据库路径:', dbPath);
 
+// 确保数据库目录存在
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+}
+
 // 数据库初始化
-const db = new sqlite3.Database(dbPath);
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+        console.error('数据库连接错误:', err);
+        process.exit(1);
+    }
+    console.log('数据库连接成功');
+});
 
 // 创建数据表
 db.serialize(() => {
@@ -109,18 +130,15 @@ db.serialize(() => {
     )`);
 
     // 操作日志表 - 补充字段
-    //db.run(`DROP TABLE IF EXISTS operation_logs`);
     db.run(`CREATE TABLE IF NOT EXISTS operation_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
-        operator_name VARCHAR(50),
         action VARCHAR(100) NOT NULL,
+        action_type VARCHAR(50),
+        action_content TEXT,
         target_user_id INTEGER,
         details TEXT,
         ip_address VARCHAR(50),
-        module VARCHAR(50),             /* 操作模块 */
-        level VARCHAR(20),              /* 操作级别 */
-        status VARCHAR(20),             /* 操作状态 */
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id)
     )`);
@@ -148,7 +166,7 @@ db.serialize(() => {
         db.run(`INSERT OR IGNORE INTO users 
             (card_number, username, password, student_id, name, department, role, balance) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            ['ADMIN001', 'admin', hashedPassword, 'ADMIN001', '系统管理员', '信息中心', 'admin', 10000.00]
+            ['ADMIN001', 'admin', hashedPassword, 'ADMIN001', '系统管理员', '信息中心', 'admin', null]
         );
     });
 
@@ -211,11 +229,18 @@ const requireAdmin = (req, res, next) => {
     next();
 };
 
-// 记录操作日志
+// 更新日志记录函数
 const logOperation = (userId, action, targetUserId = null, details = null, ipAddress = null) => {
-    db.run(`INSERT INTO operation_logs (user_id, action, target_user_id, details, ip_address) 
-            VALUES (?, ?, ?, ?, ?)`,
-        [userId, action, targetUserId, details, ipAddress]
+    db.run(`INSERT INTO operation_logs (
+        user_id, 
+        action,
+        action_type,
+        action_content,
+        target_user_id, 
+        details, 
+        ip_address
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [userId, action, action, details, targetUserId, details, ipAddress]
     );
 };
 
@@ -893,29 +918,85 @@ app.get('/api/admin/statistics', authenticateToken, requireAdmin, (req, res) => 
 
 // 获取操作日志
 app.get('/api/admin/logs', authenticateToken, requireAdmin, (req, res) => {
-    const { page = 1, limit = 50 } = req.query;
+    const { page = 1, limit = 10, search = '', operator = '' } = req.query;
     const offset = (page - 1) * limit;
 
-    db.all(`SELECT l.*, u.card_number as operator_card
-            FROM operation_logs l
-            LEFT JOIN users u ON l.user_id = u.id
-            ORDER BY l.created_at DESC
-            LIMIT ? OFFSET ?`,
-        [limit, offset], (err, logs) => {
+    let countSql = 'SELECT COUNT(*) as total FROM operation_logs l LEFT JOIN users u ON l.user_id = u.id';
+    let sql = `SELECT 
+        l.*, 
+        u.card_number as operator_card,
+        u.name as operator_name,
+        l.action as action_type,
+        l.details as action_content
+    FROM operation_logs l
+    LEFT JOIN users u ON l.user_id = u.id`;
+    
+    const conditions = [];
+    const params = [];
+
+    if (search) {
+        conditions.push(`(l.action LIKE ? OR l.details LIKE ? OR l.action_type LIKE ? OR l.action_content LIKE ?)`);
+        params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    
+    if (operator) {
+        conditions.push(`u.card_number = ?`);
+        params.push(operator);
+    }
+
+    if (conditions.length > 0) {
+        sql += ` WHERE ${conditions.join(' AND ')}`;
+        countSql += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    // 查询总记录数
+    db.get(countSql, params, (err, count) => {
+        if (err) {
+            return res.status(500).json({ error: '数据库错误' });
+        }
+
+        sql += ` ORDER BY l.created_at DESC LIMIT ? OFFSET ?`;
+        const queryParams = [...params, limit, offset];
+
+        db.all(sql, queryParams, (err, logs) => {
             if (err) {
                 return res.status(500).json({ error: '数据库错误' });
             }
 
-            db.get('SELECT COUNT(*) as total FROM operation_logs', (err, count) => {
-                res.json({
-                    logs,
-                    total: count.total,
-                    page: parseInt(page),
-                    pages: Math.ceil(count.total / limit)
-                });
+            const formattedLogs = logs.map(log => ({
+                ...log,
+                created_at: new Date(log.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+                operator: log.operator_name || log.operator_card || '-'
+            }));
+
+            res.json({
+                logs: formattedLogs,
+                total: count.total,
+                page: parseInt(page),
+                pages: Math.ceil(count.total / limit)
             });
+        });
+    });
+});
+
+// 获取所有操作人列表
+app.get('/api/admin/operators', authenticateToken, requireAdmin, (req, res) => {
+    const sql = `
+        SELECT DISTINCT u.card_number, u.name 
+        FROM users u
+        INNER JOIN operation_logs l ON l.user_id = u.id
+        WHERE u.card_number IS NOT NULL
+        AND u.card_number != ''
+        GROUP BY u.card_number, u.name
+        ORDER BY u.name ASC
+    `;
+    
+    db.all(sql, [], (err, operators) => {
+        if (err) {
+            return res.status(500).json({ error: '数据库错误' });
         }
-    );
+        res.json(operators);
+    });
 });
 
 // 创建操作日志
