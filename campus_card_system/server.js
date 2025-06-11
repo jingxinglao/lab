@@ -1041,38 +1041,53 @@ app.put('/api/admin/users/:id/status', authenticateToken, requireAdmin, (req, re
     }
 
     // 获取用户信息
-    db.get('SELECT username, name, student_id, department, card_number FROM users WHERE id = ?', [userId], (err, user) => {
-        if (err) {
-            return res.status(500).json({ error: '数据库错误' });
-        }
-
-        if (!user) {
-            return res.status(404).json({ error: '用户不存在' });
-        }
-
-        db.run('UPDATE users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-            [status, userId], function(err) {
-                if (err) {
-                    return res.status(500).json({ error: '数据库错误' });
-                }
-
-                if (this.changes === 0) {
-                    return res.status(404).json({ error: '用户不存在' });
-                }
-
-                // 记录操作日志
-                logOperation(
-                    req.user.id,
-                    `${status === 'active' ? '解冻' : '冻结'}用户`,
-                    userId,
-                    `${status === 'active' ? '解冻' : '冻结'}用户：${user.username}，姓名：${user.name}，学号：${user.student_id}，院系：${user.department}，卡号：${user.card_number}`,
-                    req.ip
-                );
-
-                res.json({ success: true, message: `用户${status === 'active' ? '解冻' : '冻结'}成功` });
+    db.get('SELECT id, username, name, student_id, department, card_number, role FROM users WHERE id = ?', 
+        [userId], (err, user) => {
+            if (err) {
+                return res.status(500).json({ error: '数据库错误' });
             }
-        );
-    });
+
+            if (!user) {
+                return res.status(404).json({ error: '用户不存在' });
+            }
+
+            // 不允许冻结管理员账户
+            if (user.role === 'admin') {
+                return res.status(403).json({ error: '不能冻结管理员账户' });
+            }
+
+            db.run('UPDATE users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                [status, userId], function(err) {
+                    if (err) {
+                        return res.status(500).json({ error: '数据库错误' });
+                    }
+
+                    if (this.changes === 0) {
+                        return res.status(404).json({ error: '用户不存在' });
+                    }
+
+                    // 记录操作日志
+                    logOperation(
+                        req.user.id,
+                        `${status === 'active' ? '解冻' : '冻结'}用户`,
+                        userId,
+                        `${status === 'active' ? '解冻' : '冻结'}用户：${user.username}，姓名：${user.name}，` +
+                        `学号：${user.student_id}，院系：${user.department}，卡号：${user.card_number}`,
+                        req.ip
+                    );
+
+                    res.json({ 
+                        success: true, 
+                        message: `用户${status === 'active' ? '解冻' : '冻结'}成功`,
+                        user: {
+                            ...user,
+                            status
+                        }
+                    });
+                }
+            );
+        }
+    );
 });
 
 // 管理员快捷操作

@@ -1178,7 +1178,7 @@
                             </thead>
                             <tbody>
                                 ${users.map(user => `
-                                    <tr>
+                                    <tr data-user-id="${user.id}">
                                         <td>${user.username}</td>
                                         <td>${user.name || '-'}</td>
                                         <td>${user.student_id || '-'}</td>
@@ -1326,7 +1326,7 @@
                             </thead>
                             <tbody>
                                 ${users.map(user => `
-                                    <tr>
+                                    <tr data-user-id="${user.id}">
                                         <td>${user.username}</td>
                                         <td>${user.name || '-'}</td>
                                         <td>${user.student_id || '-'}</td>
@@ -1635,6 +1635,66 @@
                 showAlert('edit-profile-alert', '网络错误', 'error');
             }
         });
+
+        // 添加用户冻结/解冻功能
+        async function toggleUserStatus(user) {
+            const newStatus = user.status === 'active' ? 'frozen' : 'active';
+            try {
+                const response = await fetch(`${API_BASE}/admin/users/${user.id}/status`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    // 更新本地用户状态
+                    user.status = newStatus;
+                    
+                    // 记录操作日志
+                    await recordLog(
+                        newStatus === 'active' ? '解冻用户' : '冻结用户',
+                        `${newStatus === 'active' ? '解冻' : '冻结'}用户：${user.username}`
+                    );
+                    
+                    // 更新当前行的显示
+                    const userRow = document.querySelector(`tr[data-user-id="${user.id}"]`);
+                    if (userRow) {
+                        // 更新状态列
+                        const statusCell = userRow.querySelector('td:nth-child(7)');
+                        if (statusCell) {
+                            statusCell.textContent = user.status === 'active' ? '正常' : '已冻结';
+                        }
+                        
+                        // 更新按钮
+                        const toggleButton = userRow.querySelector('td:last-child button:last-child');
+                        if (toggleButton) {
+                            toggleButton.textContent = user.status === 'active' ? '冻结' : '解冻';
+                            toggleButton.className = `btn ${user.status === 'active' ? 'btn-danger' : 'btn-success'}`;
+                            toggleButton.style.padding = '5px 10px';
+                            toggleButton.style.fontSize = '14px';
+                            
+                            // 更新按钮的点击事件处理程序
+                            toggleButton.onclick = () => toggleUserStatus({
+                                ...user,
+                                status: newStatus // 使用更新后的状态
+                            });
+                        }
+                    }
+                    
+                    showAlert('users-alert', `用户${newStatus === 'active' ? '解冻' : '冻结'}成功`, 'success');
+                    await loadLogs(1); // 重新加载日志
+                } else {
+                    showAlert('users-alert', result.error || '操作失败', 'error');
+                }
+            } catch (error) {
+                showAlert('users-alert', '网络错误', 'error');
+            }
+        }
     </script>
 </body>
 </html>
